@@ -1,0 +1,8 @@
+# Node.js dependencies
+node_modules/
+
+# Optional: OS-specific and environment files
+.env
+.DS_Store
+*.log
+npm-debug.log*
