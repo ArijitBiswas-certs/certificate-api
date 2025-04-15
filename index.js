@@ -1,6 +1,8 @@
+const fs = require("fs");
 const express = require("express");
 const bodyParser = require("body-parser");
 const { v4: uuidv4 } = require("uuid");
+const { createCanvas, loadImage } = require("canvas");
 
 const app = express();
 const PORT = 3000;
@@ -8,6 +10,7 @@ const PORT = 3000;
 // Serve static files from src/images
 const path = require('path');
 app.use('/images', express.static(path.join(__dirname, 'src/images')));
+app.use('/issued', express.static(path.join(__dirname, 'src/issued')));
 
 // Parse JSON bodies
 app.use(bodyParser.json());
@@ -273,9 +276,16 @@ app.post("/api/certificates", async (req, res) => {
 
   certificates.push(certificate);
 
-  // 🖼️ Image generation logic remains unchanged
+  // 🧹 Delete existing certificate image (if any)
+  const outputDir = path.join(__dirname, "src", "issued");
+  const outputPath = path.join(outputDir, "newCertificate.png");
+
   try {
-    const { createCanvas, loadImage } = require("canvas");
+    if (fs.existsSync(outputPath)) {
+      fs.unlinkSync(outputPath);
+    }
+
+    // 🖼️ Generate certificate image
     const width = 1200;
     const height = 850;
     const canvas = createCanvas(width, height);
@@ -317,8 +327,18 @@ app.post("/api/certificates", async (req, res) => {
       });
     }
 
-    res.setHeader("Content-Type", "image/png");
-    return canvas.pngStream().pipe(res);
+    // 💾 Save image to disk
+    const out = fs.createWriteStream(outputPath);
+    const stream = canvas.createPNGStream();
+    stream.pipe(out);
+    out.on("finish", () => {
+      return res.status(200).json({
+        success: true,
+        message: "Certificate generated successfully",
+        imagePath: "issued/newCertificate.png",
+        certificateId: certificate.id,
+      });
+    });
   } catch (err) {
     console.error("Image generation error:", err);
     return res.status(500).json({
