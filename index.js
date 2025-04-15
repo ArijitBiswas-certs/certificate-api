@@ -8,9 +8,9 @@ const app = express();
 const PORT = 3000;
 
 // Serve static files from src/images
-const path = require('path');
-app.use('/images', express.static(path.join(__dirname, 'src/images')));
-app.use('/issued', express.static(path.join(__dirname, 'src/issued')));
+const path = require("path");
+app.use("/images", express.static(path.join(__dirname, "src/images")));
+app.use("/issued", express.static(path.join(__dirname, "src/issued")));
 
 // Parse JSON bodies
 app.use(bodyParser.json());
@@ -167,12 +167,18 @@ app.post("/api/certificates", async (req, res) => {
   }
 
   // 🔁 Auto-map name to recipientName if required by template
-  if (template.requiredFields?.includes("recipientName") && !req.body.recipientName) {
+  if (
+    template.requiredFields?.includes("recipientName") &&
+    !req.body.recipientName
+  ) {
     req.body.recipientName = req.body.name;
   }
 
   // Validate template-specific required fields
-  let missingTemplateField = validateFields(req.body, template.requiredFields || []);
+  let missingTemplateField = validateFields(
+    req.body,
+    template.requiredFields || []
+  );
   if (missingTemplateField) {
     return res.status(400).json({
       success: false,
@@ -194,7 +200,10 @@ app.post("/api/certificates", async (req, res) => {
   // Validate signatories
   let certificateSignatories = [];
   if (template.requiredFields.includes("signatoryIds")) {
-    if (!Array.isArray(req.body.signatoryIds) || req.body.signatoryIds.length === 0) {
+    if (
+      !Array.isArray(req.body.signatoryIds) ||
+      req.body.signatoryIds.length === 0
+    ) {
       return res.status(400).json({
         success: false,
         message: "signatoryIds must be a non-empty array",
@@ -249,13 +258,15 @@ app.post("/api/certificates", async (req, res) => {
   // Collect custom attributes
   const customAttributes = {};
   template.requiredFields.forEach((field) => {
-    if (!["badgeId", "expiryDate", "signatoryIds", "issuanceDate"].includes(field)) {
+    if (
+      !["badgeId", "expiryDate", "signatoryIds", "issuanceDate"].includes(field)
+    ) {
       customAttributes[field] = req.body[field];
     }
   });
 
   const badgeName = req.body.badgeId
-    ? (badges.find((b) => b.id === req.body.badgeId)?.name || null)
+    ? badges.find((b) => b.id === req.body.badgeId)?.name || null
     : null;
 
   const certificate = {
@@ -280,6 +291,10 @@ app.post("/api/certificates", async (req, res) => {
   const outputDir = path.join(__dirname, "src", "issued");
   const outputPath = path.join(outputDir, "newCertificate.png");
 
+  // ✅ Ensure 'issued' directory exists
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
   try {
     if (fs.existsSync(outputPath)) {
       fs.unlinkSync(outputPath);
@@ -315,7 +330,11 @@ app.post("/api/certificates", async (req, res) => {
     let y = 470;
     ctx.font = "26px Arial";
     for (const key in certificate.customAttributes) {
-      ctx.fillText(`${key}: ${certificate.customAttributes[key]}`, width / 2, y);
+      ctx.fillText(
+        `${key}: ${certificate.customAttributes[key]}`,
+        width / 2,
+        y
+      );
       y += 40;
     }
 
@@ -347,7 +366,6 @@ app.post("/api/certificates", async (req, res) => {
     });
   }
 });
-
 
 // 5. API to generate certificate preview
 app.post("/api/certificates/preview", (req, res) => {
