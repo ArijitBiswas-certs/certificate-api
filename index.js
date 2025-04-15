@@ -141,7 +141,7 @@ app.get("/api/signatories", (req, res) => {
 });
 
 // 4. API to create a certificate
-app.post("/api/certificates", (req, res) => {
+app.post("/api/certificates", async (req, res) => {
   // Validate base required fields (name and email)
   let missingBase = validateFields(req.body, baseRequired);
   if (missingBase) {
@@ -278,10 +278,72 @@ app.post("/api/certificates", (req, res) => {
 
   certificates.push(certificate);
 
-  res.status(201).json({
-    success: true,
-    data: certificate,
-  });
+  const { createCanvas, loadImage } = require("canvas");
+
+  const width = 1200;
+  const height = 850;
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+  
+  try {
+    // Load template image
+    const templatePath = path.join(__dirname, "src", template.image);
+    const backgroundImage = await loadImage(templatePath);
+  
+    // Draw background
+    ctx.drawImage(backgroundImage, 0, 0, width, height);
+  
+    // Styling
+    ctx.fillStyle = "#000";
+    ctx.font = "bold 40px Arial";
+    ctx.textAlign = "center";
+  
+    // Name
+    ctx.fillText(certificate.name, width / 2, 250);
+  
+    // Badge
+    if (certificate.badgeName) {
+      ctx.font = "30px Arial";
+      ctx.fillText(`Awarded: ${certificate.badgeName}`, width / 2, 310);
+    }
+  
+    // Issuance Date
+    ctx.font = "28px Arial";
+    ctx.fillText(`Issued on: ${certificate.issuanceDate}`, width / 2, 370);
+  
+    // Expiry
+    if (certificate.expiryDate) {
+      ctx.fillText(`Valid till: ${certificate.expiryDate}`, width / 2, 410);
+    }
+  
+    // Custom attributes
+    let y = 470;
+    ctx.font = "26px Arial";
+    for (const key in certificate.customAttributes) {
+      ctx.fillText(`${key}: ${certificate.customAttributes[key]}`, width / 2, y);
+      y += 40;
+    }
+  
+    // Signatories
+    if (certificate.signatories?.length) {
+      y += 60;
+      certificate.signatories.forEach((sig) => {
+        ctx.fillText(`${sig.name}, ${sig.title}`, width / 2, y);
+        y += 40;
+      });
+    }
+  
+    // Return as PNG
+    res.setHeader("Content-Type", "image/png");
+    return canvas.pngStream().pipe(res);
+  
+  } catch (err) {
+    console.error("Image generation error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to generate certificate image",
+    });
+  }  
 });
 
 // 5. API to generate certificate preview
