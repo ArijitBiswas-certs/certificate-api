@@ -142,7 +142,10 @@ app.get("/api/signatories", (req, res) => {
 
 // 4. API to create a certificate
 app.post("/api/certificates", async (req, res) => {
-  // Validate base required fields (name and email)
+  const { name, email, templateId } = req.body;
+
+  // Validate base required fields (from OpenAPI schema)
+  const baseRequired = ["name", "email", "templateId"];
   let missingBase = validateFields(req.body, baseRequired);
   if (missingBase) {
     return res.status(400).json({
@@ -151,9 +154,7 @@ app.post("/api/certificates", async (req, res) => {
     });
   }
 
-  const { name, email, templateId } = req.body;
-
-  // Validate template exists
+  // Find template
   const template = templates.find((t) => t.id === templateId);
   if (!template) {
     return res.status(400).json({
@@ -162,11 +163,13 @@ app.post("/api/certificates", async (req, res) => {
     });
   }
 
-  // Validate additional required fields as specified by the template.
-  let missingTemplateField = validateFields(
-    req.body,
-    template.requiredFields || []
-  );
+  // 🔁 Auto-map name to recipientName if required by template
+  if (template.requiredFields?.includes("recipientName") && !req.body.recipientName) {
+    req.body.recipientName = req.body.name;
+  }
+
+  // Validate template-specific required fields
+  let missingTemplateField = validateFields(req.body, template.requiredFields || []);
   if (missingTemplateField) {
     return res.status(400).json({
       success: false,
@@ -174,7 +177,7 @@ app.post("/api/certificates", async (req, res) => {
     });
   }
 
-  // If badgeId is required, validate its existence.
+  // Validate badge if required
   if (template.requiredFields.includes("badgeId")) {
     const badge = badges.find((b) => b.id === req.body.badgeId);
     if (!badge) {
@@ -185,27 +188,21 @@ app.post("/api/certificates", async (req, res) => {
     }
   }
 
-  // If signatoryIds is required, check that it's an array and that at least one valid signatory exists.
+  // Validate signatories
   let certificateSignatories = [];
   if (template.requiredFields.includes("signatoryIds")) {
-    if (
-      !Array.isArray(req.body.signatoryIds) ||
-      req.body.signatoryIds.length === 0
-    ) {
+    if (!Array.isArray(req.body.signatoryIds) || req.body.signatoryIds.length === 0) {
       return res.status(400).json({
         success: false,
         message: "signatoryIds must be a non-empty array",
       });
     }
+
     certificateSignatories = req.body.signatoryIds
       .map((id) => {
         const signatory = signatories.find((s) => s.id === id);
         return signatory
-          ? {
-              id: signatory.id,
-              name: signatory.name,
-              title: signatory.title,
-            }
+          ? { id: signatory.id, name: signatory.name, title: signatory.title }
           : null;
       })
       .filter((s) => s !== null);
@@ -218,7 +215,7 @@ app.post("/api/certificates", async (req, res) => {
     }
   }
 
-  // Email regex validation (applies to all certificates)
+  // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
     return res.status(400).json({
@@ -227,11 +224,11 @@ app.post("/api/certificates", async (req, res) => {
     });
   }
 
-  // Use provided issuanceDate or default to today.
+  // Set issuanceDate (default: today)
   const today = new Date().toISOString().split("T")[0];
   const issuanceDate = req.body.issuanceDate || today;
 
-  // For expiryDate, if required then it must be provided; otherwise, default to 1 year from issuance.
+  // Set expiryDate (default: 1 year later if not required)
   let expiryDate = req.body.expiryDate;
   if (template.requiredFields.includes("expiryDate")) {
     if (!expiryDate) {
@@ -246,18 +243,18 @@ app.post("/api/certificates", async (req, res) => {
     expiryDate = expDate.toISOString().split("T")[0];
   }
 
-  // Collect additional custom attributes required by the template.
-  // In this example, they are certificateNumber and recipientName.
+  // Collect custom attributes
   const customAttributes = {};
   template.requiredFields.forEach((field) => {
-    if (
-      !["badgeId", "expiryDate", "signatoryIds", "issuanceDate"].includes(field)
-    ) {
+    if (!["badgeId", "expiryDate", "signatoryIds", "issuanceDate"].includes(field)) {
       customAttributes[field] = req.body[field];
     }
   });
 
-  // Create the certificate object
+  const badgeName = req.body.badgeId
+    ? (badges.find((b) => b.id === req.body.badgeId)?.name || null)
+    : null;
+
   const certificate = {
     id: uuidv4(),
     name,
@@ -265,9 +262,7 @@ app.post("/api/certificates", async (req, res) => {
     templateId,
     templateName: template.name,
     badgeId: req.body.badgeId || null,
-    badgeName: req.body.badgeId
-      ? badges.find((b) => b.id === req.body.badgeId).name
-      : null,
+    badgeName,
     expiryDate,
     signatories: certificateSignatories,
     issuanceDate,
@@ -278,53 +273,42 @@ app.post("/api/certificates", async (req, res) => {
 
   certificates.push(certificate);
 
-  const { createCanvas, loadImage } = require("canvas");
-
-  const width = 1200;
-  const height = 850;
-  const canvas = createCanvas(width, height);
-  const ctx = canvas.getContext("2d");
-  
+  // 🖼️ Image generation logic remains unchanged
   try {
-    // Load template image
+    const { createCanvas, loadImage } = require("canvas");
+    const width = 1200;
+    const height = 850;
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext("2d");
+
     const templatePath = path.join(__dirname, "src", template.image);
     const backgroundImage = await loadImage(templatePath);
-  
-    // Draw background
     ctx.drawImage(backgroundImage, 0, 0, width, height);
-  
-    // Styling
+
     ctx.fillStyle = "#000";
     ctx.font = "bold 40px Arial";
     ctx.textAlign = "center";
-  
-    // Name
     ctx.fillText(certificate.name, width / 2, 250);
-  
-    // Badge
+
     if (certificate.badgeName) {
       ctx.font = "30px Arial";
       ctx.fillText(`Awarded: ${certificate.badgeName}`, width / 2, 310);
     }
-  
-    // Issuance Date
+
     ctx.font = "28px Arial";
     ctx.fillText(`Issued on: ${certificate.issuanceDate}`, width / 2, 370);
-  
-    // Expiry
+
     if (certificate.expiryDate) {
       ctx.fillText(`Valid till: ${certificate.expiryDate}`, width / 2, 410);
     }
-  
-    // Custom attributes
+
     let y = 470;
     ctx.font = "26px Arial";
     for (const key in certificate.customAttributes) {
       ctx.fillText(`${key}: ${certificate.customAttributes[key]}`, width / 2, y);
       y += 40;
     }
-  
-    // Signatories
+
     if (certificate.signatories?.length) {
       y += 60;
       certificate.signatories.forEach((sig) => {
@@ -332,19 +316,18 @@ app.post("/api/certificates", async (req, res) => {
         y += 40;
       });
     }
-  
-    // Return as PNG
+
     res.setHeader("Content-Type", "image/png");
     return canvas.pngStream().pipe(res);
-  
   } catch (err) {
     console.error("Image generation error:", err);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to generate certificate image",
     });
-  }  
+  }
 });
+
 
 // 5. API to generate certificate preview
 app.post("/api/certificates/preview", (req, res) => {
