@@ -3,6 +3,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const { v4: uuidv4 } = require("uuid");
 const { createCanvas, loadImage } = require("canvas");
+const courseData = require("./courses.json");
 
 const app = express();
 const PORT = 3000;
@@ -430,10 +431,10 @@ app.post("/api/certificates/preview", (req, res) => {
         const signatory = signatories.find((s) => s.id === id);
         return signatory
           ? {
-              id: signatory.id,
-              name: signatory.name,
-              title: signatory.title,
-            }
+            id: signatory.id,
+            name: signatory.name,
+            title: signatory.title,
+          }
           : null;
       })
       .filter((s) => s !== null);
@@ -466,21 +467,20 @@ app.post("/api/certificates/preview", (req, res) => {
       ${badge ? `<p>with a ${badge.name} badge of achievement</p>` : ""}
       ${req.body.expiryDate ? `<p>Expiry Date: ${req.body.expiryDate}</p>` : ""}
       ${customAttributesHtml}
-      ${
-        previewSignatories.length > 0
-          ? `<div style="margin-top: 50px;">` +
-            previewSignatories
-              .map(
-                (sig) =>
-                  `<div style="display: inline-block; margin: 0 20px;">
+      ${previewSignatories.length > 0
+      ? `<div style="margin-top: 50px;">` +
+      previewSignatories
+        .map(
+          (sig) =>
+            `<div style="display: inline-block; margin: 0 20px;">
               <p style="border-top: 1px solid black; padding-top: 5px;">${sig.name}</p>
               <p>${sig.title}</p>
             </div>`
-              )
-              .join("") +
-            `</div>`
-          : ""
-      }
+        )
+        .join("") +
+      `</div>`
+      : ""
+    }
     </div>
   `;
 
@@ -517,6 +517,15 @@ app.post("/api/certificates/preview", (req, res) => {
     success: true,
     data: preview,
   });
+});
+
+app.get("/api/courses", (req, res) => {
+  const simplifiedCourses = courseData.filtered_courses.map((course) => ({
+    id: course.id,
+    name: course.name,
+    slug: course.slug,
+  }));
+  res.json(simplifiedCourses);
 });
 
 // Start the server
